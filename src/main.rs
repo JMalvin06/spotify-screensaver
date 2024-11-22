@@ -1,236 +1,133 @@
-use std::time::Duration;
+use std::sync::mpsc;
 
-use iced::{
-    alignment::Vertical::Top,
-    time,
-    widget::{ button, container, image::Handle, row, text, text_input, Container },
-    Alignment::Center,
-    Length,
-    Subscription,
-    Task,
-};
-use iced::widget::column;
-use iced::widget::image;
+use bytes::Bytes;
+use nannou::prelude::*;
 mod spotify;
 
+const SIZE: f32 = 200.;
+const SPEED: f32 = 100.;
+
+static mut CAN_RECIEVE: bool = false;
 
 
-enum Status {
-    UserSelect,
-    SignIn,
-    CurrentTrack,
+fn set_can_recieve(val: bool){
+    unsafe { CAN_RECIEVE = val };
 }
-impl Default for Status {
-    fn default() -> Self {
-        Status::UserSelect
+
+#[tokio::main]
+async fn main() {
+    nannou::app(model)
+        .update(update)
+        .run();
+}
+
+struct Model {
+    x: f32,
+    y: f32,
+    last_time: f32,
+    x_sign: f32,
+    y_sign: f32,
+    texture: wgpu::Texture,
+    img_send: mpsc::Sender<Bytes>, 
+    img_recieve: mpsc::Receiver<Bytes>, 
+    token_send: mpsc::Sender<String>,
+    token_recieve: mpsc::Receiver<String>,
+    next_refresh: f32,
+    window: WindowId,
+    token: String
+}
+
+fn model(app: &App) -> Model {
+    let window = app.new_window().fullscreen().view(view).build().unwrap();
+    let (img_send, img_recieve) = mpsc::channel();
+    let (token_send, token_recieve) = mpsc::channel();
+    let assets = app.assets_path().unwrap();
+    let img_path = assets.join("images").join("placeholder.jpg");
+    let texture = wgpu::Texture::from_path(app, img_path).expect("Failed to load");
+    
+    Model {
+        x: 0.0,
+        y: 0.0,
+        last_time: 0.0,
+        x_sign: 1.0,
+        y_sign: 1.0,
+        texture: texture,
+        img_recieve,
+        img_send,
+        token_send,
+        token_recieve,
+        next_refresh: 0.,
+        token: String::default(),
+        window
     }
 }
 
-enum State {
-    Idle,
-    Refreshing,
-}
-impl Default for State {
-    fn default() -> Self {
-        State::Idle
+fn update(app: &App, model: &mut Model, _update: Update) { 
+    let boundary = app.window_rect();
+    let delta_t = app.time - model.last_time;
+
+    model.x += delta_t * SPEED * model.x_sign;
+    model.y += delta_t * SPEED * model.y_sign;
+    
+    if model.x+SIZE/2. >= boundary.right() && model.x_sign > 0. {
+        model.x_sign = -1.0;
+    } else if model.x-SIZE/2. <= boundary.left() {
+        model.x_sign = 1.0;
     }
-}
-
-#[derive(Clone, Debug)]
-enum Message {
-    SelectedUser(String),
-    NextPage,
-    SignIn,
-    InputValue(String),
-    ToSelection,
-    RefreshTrack(()),
-    Cancel,
-}
-
-#[derive(Default)]
-struct LoginMenu {
-    selection: String,
-    token: String,
-    content: Status,
-    input: String,
-    current_track: String,
-    current_artist: String,
-    current_image: String,
-    state: State,
-}
-
-impl LoginMenu {
-    fn title(&self) -> String {
-        String::from("User Menu")
+    if model.y+SIZE/2. >= boundary.top() && model.y_sign > 0. {
+        model.y_sign = -1.0;
+    } else if model.y-SIZE/2. <= boundary.bottom() && model.y_sign < 0. {
+        model.y_sign = 1.0;
     }
 
-    fn new() -> (LoginMenu, Task<Message>) {
-        (
-            Self {
-                selection: String::from("Select a user.."),
-                token: String::new(),
-                content: Status::UserSelect,
-                input: String::default(),
-                current_track: String::default(),
-                current_artist: String::default(),
-                current_image: String::from("images/placeholder.jpg"),
-                state: State::Idle,
+    model.last_time = app.time;
+
+    
+    if model.token.is_empty() {
+        tokio::spawn(spotify::generate_token(model.token_send.clone(), String::from("JMalvin06")));
+        model.token = String::from("None");
+        model.token = match model.token_recieve.recv() {
+            Ok(b) => {
+                println!("Reponse!");
+                b
             },
-            Task::none(),
-        )
-    }
-
-    fn view(&self) -> Container<'_, Message> {
-        match self.content {
-            Status::UserSelect => {
-                let list = iced::widget::pick_list(
-                    spotify::get_user_list(),
-                    Some(self.selection.clone()),
-                    Message::SelectedUser
-                );
-                container(
-                    column![
-                        text("User Login").size(50),
-                        list.placeholder("Select a user.."),
-                        row![
-                            button("Sign In").on_press(Message::SignIn),
-                            button("Next").on_press(Message::NextPage)
-                        ].spacing(50)
-                    ]
-                        .align_x(Center)
-                        .spacing(40)
-                )
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .align_x(Center)
-                    .align_y(Center)
-                    .padding(100)
-                //.align_y(Center)
-            }
-            Status::SignIn => {
-                container(
-                    column![
-                        text_input("Spotify Username", &self.input)
-                            .width(250)
-                            .on_input(|value| Message::InputValue(value))
-                            .on_submit(Message::ToSelection),
-                        row![
-                            button("Cancel").on_press(Message::Cancel),
-                            button("Submit").on_press(Message::ToSelection)
-                        ].spacing(30)
-                    ].align_x(Center)
-                )
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .align_x(Center)
-                    .align_y(Center)
-                    .padding(300)
-            }
-            Status::CurrentTrack => {
-                container(
-                    column![
-                        text("Current Track").size(50),
-                        image::viewer(self.get_album_art()).height(Length::Fixed(300.0)),
-                        text(self.current_track.clone()).size(40),
-                        text(self.current_artist.clone()).size(25)
-                        /*button("Refresh")
-                        .on_press(Message::RefreshTrack)*/
-                    ]
-                        .spacing(30)
-                        .align_x(Center)
-                )
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .align_x(Center)
-                    .align_y(Top)
-            }
-        }
-    }
-
-    fn get_album_art(&self) -> Handle {
-        println!("Check");
-        if self.current_image.contains("placeholder.jpg") {
-            return Handle::from_path(self.current_image.clone());
-        } else {
-            return Handle::from_bytes(spotify::get_image(self.current_image.clone()));
-        }
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        let tick: Subscription<Message> = match self.state {
-            State::Idle => Subscription::none(),
-            State::Refreshing { .. } => {
-                let t = time
-                    ::every(Duration::from_millis(5000))
-                    .map(|_arg0: std::time::Instant| Message::RefreshTrack(()));
-                return t;
+            Err(_) => {
+                println!("None");
+                String::default()
             }
         };
-
-        return tick;
+    }
+    
+    if app.time > model.next_refresh && unsafe { !CAN_RECIEVE }{
+        println!("Sent");
+        tokio::spawn(spotify::get_current_track(model.img_send.clone(),  model.token.clone()));
+        model.next_refresh +=  5.;
     }
 
-    fn refresh_track(&mut self) {
-        if self.token.is_empty() {
-            self.token = spotify::generate_token(self.selection.clone());
-        }
-        let track = spotify::get_current_track(&self.token);
-        if track.name.is_empty() && track.artists.is_empty() {
-            self.current_track = String::from("No song playing");
-            self.current_artist = String::from("N/A");
-            self.current_image = String::from("images/placeholder.jpg");
-        } else {
-            self.current_track = track.name;
-            self.current_artist = track.artists
-                .iter()
-                .map(|a| a.name.clone())
-                .collect::<Vec<String>>()
-                .join(", ");
-            self.current_image = match track.album.images.get(0) {
-                Some(i) => { i.url.clone() }
-                None => { String::from("images/placeholder.jpg") }
-            };
-        }
-    }
 
-    fn update(&mut self, message: Message) {
-        match message {
-            Message::SelectedUser(value) => {
-                self.selection = value;
+    if unsafe { CAN_RECIEVE } {
+        let bytes = match model.img_recieve.try_recv() {
+            Ok(p) => {
+                println!("Recieved");
+                p
             }
-            Message::NextPage => {
-                self.refresh_track();
-                self.state = State::Refreshing;
-                self.content = Status::CurrentTrack;
+            Err(_) => {
+                return;
             }
-            Message::SignIn => {
-                self.content = Status::SignIn;
-            }
-            Message::InputValue(value) => {
-                self.input = value;
-            }
-            Message::ToSelection => {
-                //println!("User: {}", self.input);
-                let user = self.input.clone();
-                let code = spotify::retrieve_code();
-                spotify::generate_refresh(user, code);
-
-                self.content = Status::UserSelect;
-            }
-            Message::RefreshTrack(_) => {
-                self.refresh_track();
-                println!("{}", self.current_image);
-            }
-            Message::Cancel => {
-                self.content = Status::UserSelect;
-            }
-        }
+        };
+        let album_art = nannou::image::load_from_memory(&bytes).expect("Unable to load");
+        model.texture = wgpu::Texture::from_image(app, &album_art);
+        println!("Loaded");
+        unsafe { CAN_RECIEVE = false };
     }
 }
 
-fn main() -> iced::Result {
-    let app = iced
-        ::application(LoginMenu::title, LoginMenu::update, LoginMenu::view)
-        .subscription(LoginMenu::subscription);
-    app.run_with(LoginMenu::new)
+fn view(app: &App, model: &Model, frame: Frame){  
+    app.window(model.window).unwrap().set_cursor_visible(false);
+    let draw = app.draw();
+    frame.clear(BLACK);
+    draw.texture(&model.texture)
+    .x_y(model.x, model.y)
+    .w_h(SIZE,SIZE);
+    draw.to_frame(app, &frame).unwrap()
 }

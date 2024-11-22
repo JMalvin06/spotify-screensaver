@@ -3,10 +3,13 @@ use serde::{ Serialize, Deserialize };
 use url_search_params;
 use open;
 use tokio;
+use std::sync::mpsc;
 
 use std::process::Command;
 use std::collections::HashMap;
 use std::fs;
+
+use crate::set_can_recieve;
 
 mod constants; // Stores client ID and secret for safekeeping
 const URI: &str = "http://localhost:8888/callback";
@@ -180,8 +183,8 @@ pub(crate) async fn generate_refresh(username: String, code: String) -> String {
     }
 }
 
-#[tokio::main]
-pub(crate) async fn generate_token(user: String) -> String {
+
+pub(crate) async fn generate_token(sender: mpsc::Sender<String>, user: String) {
     println!("Generating token!");
     // Convert users.json to struct format
     let file: Users = serde_json
@@ -216,7 +219,9 @@ pub(crate) async fn generate_token(user: String) -> String {
         reqwest::StatusCode::OK => {
             match response.json::<Access>().await {
                 Ok(parsed) => {
-                    parsed.access_token // Recieve access token
+                    println!("Generated");
+                    //set_can_recieve(true);
+                    sender.send(parsed.access_token); // Recieve access token
                 }
                 Err(e) => panic!("Unexpected error {:?}", e), // Likely invalid authorization code
             }
@@ -268,8 +273,8 @@ pub(crate) fn retrieve_code() -> String {
     code // Return authorization code
 }
 
-#[tokio::main]
-pub(crate) async fn get_current_track(auth_token: &str) -> Track {
+
+pub(crate) async fn get_current_track(sender: mpsc::Sender<bytes::Bytes>, auth_token: String) {
     let url = format!("https://api.spotify.com/v1/me/player");
 
     let client = reqwest::Client::new(); // Client to handle API request
@@ -284,7 +289,9 @@ pub(crate) async fn get_current_track(auth_token: &str) -> Track {
         reqwest::StatusCode::OK => {
             match response.json::<Player>().await {
                 Ok(parsed) => {
-                    return parsed.item; // Return Track struct
+                    println!("Can recieve");
+                    set_can_recieve(true);
+                    sender.send(get_image(parsed.item.album.images.get(1).expect("Could not load").url.clone()).await).expect("Could not send");
                 }
                 Err(e) => {
                     // TODO: Clean redundant API call
@@ -302,7 +309,7 @@ pub(crate) async fn get_current_track(auth_token: &str) -> Track {
                                     "37i9dQZF1EYkqdzj48dyYq"
                                 )
                             {
-                                return Track {
+                                /*return Track {
                                     name: String::from("Up next"),
                                     artists: vec![Artist { name: String::from("DJ X") }],
                                     album: Album {
@@ -313,7 +320,7 @@ pub(crate) async fn get_current_track(auth_token: &str) -> Track {
                                         }],
                                         name: String::default(),
                                     },
-                                };
+                                };*/
                             } else {
                                 panic!("Response did not match the structure: {:?}", e)
                             }
@@ -326,7 +333,7 @@ pub(crate) async fn get_current_track(auth_token: &str) -> Track {
         // TODO: Add logic to generate new token
         reqwest::StatusCode::UNAUTHORIZED => { panic!("new authentication code needed") }
         reqwest::StatusCode::NO_CONTENT => {
-            let empty = Track {
+            /*let empty = Track {
                 name: String::default(),
                 artists: vec![],
                 album: Album {
@@ -334,20 +341,24 @@ pub(crate) async fn get_current_track(auth_token: &str) -> Track {
                     images: vec![],
                 },
             };
-            return empty;
+            return empty;*/
         }
         other => panic!("there was an unexpected error: {:?}", other),
     }
 }
 
-#[tokio::main]
-pub(crate) async fn get_image(url: String) -> bytes::Bytes {
-    let img_bytes = reqwest
-        ::get(url).await
-        .expect("bad response")
-        .bytes().await
-        .expect("could not convert");
-    return img_bytes;
+pub(crate) async fn get_image(url: String) -> bytes::Bytes{
+    let response = match reqwest::get(url).await {
+            Ok(r) => r,
+            Err(_) => return bytes::Bytes::new()
+        };
+
+        let img_bytes = match response.bytes().await {
+            Ok(b) => b,
+            Err(_) => return bytes::Bytes::new()
+        };
+
+    img_bytes
 }
 
 /// Generates the list of users logged in
