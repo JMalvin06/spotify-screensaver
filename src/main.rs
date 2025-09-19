@@ -11,6 +11,8 @@ use iced::{
 };
 use iced::widget::column;
 use iced::widget::image;
+
+use crate::spotify::SpotifyUser;
 mod spotify;
 
 
@@ -45,19 +47,18 @@ enum Message {
     ToSelection,
     RefreshTrack(()),
     Cancel,
+    DeleteUser
 }
 
 #[derive(Default)]
 struct LoginMenu {
+    client: SpotifyUser,
     selection: String,
-    token: String,
     content: Status,
     input: String,
-    current_track: String,
-    current_artist: String,
-    current_image: String,
     state: State,
 }
+
 
 impl LoginMenu {
     fn title(&self) -> String {
@@ -67,13 +68,10 @@ impl LoginMenu {
     fn new() -> (LoginMenu, Task<Message>) {
         (
             Self {
-                selection: String::from("Select a user.."),
-                token: String::new(),
+                client: SpotifyUser::new(),
+                selection: "Select a user..".to_string(),
                 content: Status::UserSelect,
                 input: String::default(),
-                current_track: String::default(),
-                current_artist: String::default(),
-                current_image: String::from("images/placeholder.jpg"),
                 state: State::Idle,
             },
             Task::none(),
@@ -92,20 +90,23 @@ impl LoginMenu {
                     column![
                         text("User Login").size(50),
                         list.placeholder("Select a user.."),
-                        row![
-                            button("Sign In").on_press(Message::SignIn),
-                            button("Next").on_press(Message::NextPage)
-                        ].spacing(50)
+                        column![
+                            row![
+                                button("Sign In").on_press(Message::SignIn),
+                                button("Next").on_press(Message::NextPage)
+                            ].spacing(50),
+                            button("Delete User").on_press(Message::DeleteUser),
+                        ].align_x(Center)
+                        .spacing(10),
                     ]
                         .align_x(Center)
-                        .spacing(40)
+                        .spacing(20),
                 )
                     .height(Length::Fill)
                     .width(Length::Fill)
                     .align_x(Center)
                     .align_y(Center)
                     .padding(100)
-                //.align_y(Center)
             }
             Status::SignIn => {
                 container(
@@ -127,14 +128,18 @@ impl LoginMenu {
                     .padding(300)
             }
             Status::CurrentTrack => {
+                let current_track = self.client.clone().get_track();
+                let current_artists = current_track.artists
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<String>>()
+                .join(", ");
                 container(
                     column![
                         text("Current Track").size(50),
                         image::viewer(self.get_album_art()).height(Length::Fixed(300.0)),
-                        text(self.current_track.clone()).size(40),
-                        text(self.current_artist.clone()).size(25)
-                        /*button("Refresh")
-                        .on_press(Message::RefreshTrack)*/
+                        text(current_track.name).size(40),
+                        text(current_artists).size(25),
                     ]
                         .spacing(30)
                         .align_x(Center)
@@ -149,10 +154,12 @@ impl LoginMenu {
 
     fn get_album_art(&self) -> Handle {
         println!("Check");
-        if self.current_image.contains("placeholder.jpg") {
-            return Handle::from_path(self.current_image.clone());
+        let current_image = self.client.clone().get_track().album.images[0].clone();
+        if current_image.url.contains("placeholder.jpg") {
+            return Handle::from_path(current_image.url);
         } else {
-            return Handle::from_bytes(spotify::get_image(self.current_image.clone()));
+            println!("{}", current_image.url);
+            return Handle::from_bytes(self.client.clone().get_image_data());
         }
     }
 
@@ -171,26 +178,10 @@ impl LoginMenu {
     }
 
     fn refresh_track(&mut self) {
-        if self.token.is_empty() {
-            self.token = spotify::generate_token(self.selection.clone());
+        if self.client.clone().token_empty(){
+            self.client.generate_token(self.selection.clone());
         }
-        let track = spotify::get_current_track(&self.token);
-        if track.name.is_empty() && track.artists.is_empty() {
-            self.current_track = String::from("No song playing");
-            self.current_artist = String::from("N/A");
-            self.current_image = String::from("images/placeholder.jpg");
-        } else {
-            self.current_track = track.name;
-            self.current_artist = track.artists
-                .iter()
-                .map(|a| a.name.clone())
-                .collect::<Vec<String>>()
-                .join(", ");
-            self.current_image = match track.album.images.get(0) {
-                Some(i) => { i.url.clone() }
-                None => { String::from("images/placeholder.jpg") }
-            };
-        }
+        self.client.refresh_track();
     }
 
     fn update(&mut self, message: Message) {
@@ -199,9 +190,11 @@ impl LoginMenu {
                 self.selection = value;
             }
             Message::NextPage => {
-                self.refresh_track();
-                self.state = State::Refreshing;
-                self.content = Status::CurrentTrack;
+                if self.selection != String::from("Select a user.."){
+                    self.refresh_track();
+                    self.state = State::Refreshing;
+                    self.content = Status::CurrentTrack;
+                }
             }
             Message::SignIn => {
                 self.content = Status::SignIn;
@@ -210,23 +203,24 @@ impl LoginMenu {
                 self.input = value;
             }
             Message::ToSelection => {
-                //println!("User: {}", self.input);
-                let user = self.input.clone();
-                let code = spotify::retrieve_code();
-                spotify::generate_refresh(user, code);
+                spotify::generate_user(self.input.clone(), self.client.clone());
 
                 self.content = Status::UserSelect;
             }
             Message::RefreshTrack(_) => {
                 self.refresh_track();
-                println!("{}", self.current_image);
             }
             Message::Cancel => {
                 self.content = Status::UserSelect;
+            },
+            Message::DeleteUser => {
+                spotify::delete_user(self.selection.clone());
+                self.selection = String::from("Select a user..");
             }
         }
     }
 }
+
 
 fn main() -> iced::Result {
     let app = iced
