@@ -33,7 +33,7 @@ struct Player {
     item: Track,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct Track {
     pub name: String,
     pub artists: Vec<Artist>,
@@ -50,7 +50,7 @@ impl Default for Track {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct Album {
     pub images: Vec<Image>,
     pub name: String,
@@ -65,7 +65,7 @@ impl Default for Album {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct Image {
     pub url: String,
 }
@@ -78,7 +78,7 @@ impl Default for Image {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct Artist {
     pub name: String,
 }
@@ -294,7 +294,7 @@ impl SpotifyUser {
             reqwest::StatusCode::NO_CONTENT => {
                 self.current_track = Track::default();
             }
-            other => panic!("there was an unexpected error: {:?}", other),
+            _other => ()
         }
     }
 

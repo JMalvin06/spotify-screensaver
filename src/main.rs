@@ -12,8 +12,9 @@ use iced::{
 use iced::widget::column;
 use iced::widget::image;
 
-use crate::spotify::SpotifyUser;
+use crate::spotify::{SpotifyUser, Track};
 mod spotify;
+
 
 
 
@@ -50,9 +51,10 @@ enum Message {
     DeleteUser
 }
 
-#[derive(Default)]
 struct LoginMenu {
     client: SpotifyUser,
+    cached_track: Track,
+    cached_image_data: Handle,
     selection: String,
     content: Status,
     input: String,
@@ -60,6 +62,8 @@ struct LoginMenu {
 }
 
 
+
+// TODO add multithreaded support to not block app logic
 impl LoginMenu {
     fn title(&self) -> String {
         String::from("User Menu")
@@ -70,6 +74,8 @@ impl LoginMenu {
             Self {
                 client: SpotifyUser::new(),
                 selection: "Select a user..".to_string(),
+                cached_track: spotify::Track::default(),
+                cached_image_data: Handle::from_path("images/placeholder.jpg".to_string()),
                 content: Status::UserSelect,
                 input: String::default(),
                 state: State::Idle,
@@ -130,35 +136,35 @@ impl LoginMenu {
             Status::CurrentTrack => {
                 let current_track = self.client.clone().get_track();
                 let current_artists = current_track.artists
-                .iter()
-                .map(|a| a.name.clone())
-                .collect::<Vec<String>>()
-                .join(", ");
+                    .iter()
+                    .map(|a| a.name.clone())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                
                 container(
-                    column![
-                        text("Current Track").size(50),
-                        image::viewer(self.get_album_art()).height(Length::Fixed(300.0)),
-                        text(current_track.name).size(40),
-                        text(current_artists).size(25),
-                    ]
-                        .spacing(30)
+                        column![
+                            text("Current Track").size(50),
+                            image::viewer(self.cached_image_data.clone()).height(Length::Fixed(300.0)),
+                            text(current_track.name).size(40),
+                            text(current_artists).size(25),
+                        ]
+                            .spacing(30)
+                            .align_x(Center)
+                    )
+                        .height(Length::Fill)
+                        .width(Length::Fill)
                         .align_x(Center)
-                )
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .align_x(Center)
-                    .align_y(Top)
+                        .align_y(Top)
             }
         }
     }
 
     fn get_album_art(&self) -> Handle {
-        println!("Check");
         let current_image = self.client.clone().get_track().album.images[0].clone();
         if current_image.url.contains("placeholder.jpg") {
             return Handle::from_path(current_image.url);
         } else {
-            println!("{}", current_image.url);
+            println!("new album image: {}", current_image.url);
             return Handle::from_bytes(self.client.clone().get_image_data());
         }
     }
@@ -168,7 +174,7 @@ impl LoginMenu {
             State::Idle => Subscription::none(),
             State::Refreshing { .. } => {
                 let t = time
-                    ::every(Duration::from_millis(5000))
+                    ::every(Duration::from_millis(1000))
                     .map(|_arg0: std::time::Instant| Message::RefreshTrack(()));
                 return t;
             }
@@ -192,6 +198,8 @@ impl LoginMenu {
             Message::NextPage => {
                 if self.selection != String::from("Select a user.."){
                     self.refresh_track();
+                    self.cached_image_data = self.get_album_art();
+                    self.cached_track = self.client.clone().get_track().clone();
                     self.state = State::Refreshing;
                     self.content = Status::CurrentTrack;
                 }
@@ -209,6 +217,11 @@ impl LoginMenu {
             }
             Message::RefreshTrack(_) => {
                 self.refresh_track();
+                let current_track = self.client.clone().get_track();
+                if current_track != self.cached_track {
+                    self.cached_image_data = self.get_album_art();
+                    self.cached_track = current_track.clone();
+                } 
             }
             Message::Cancel => {
                 self.content = Status::UserSelect;
