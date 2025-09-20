@@ -83,14 +83,14 @@ pub(crate) struct Artist {
     pub name: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/*#[derive(Serialize, Deserialize, Debug)]
 struct Users {
     users: Vec<User>,
-}
+}*/
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct User {
-    name: String,
+pub struct User {
+    pub(crate) name: String,
     refresh: String,
 }
 
@@ -144,19 +144,19 @@ impl SpotifyUser {
     
 
     #[tokio::main]
-    pub(crate) async fn generate_token(&mut self, username: String) {
+    pub(crate) async fn generate_token(&mut self) {
         println!("Generating token!");
-        // Convert users.json to struct format
-        let file: Users = serde_json
-            ::from_str(fs::read_to_string("users.json").expect("Error opening file").as_str())
+        // Convert user.json to struct format
+        let file: User = serde_json
+            ::from_str(fs::read_to_string("user.json").expect("Error opening file").as_str())
             .expect("Could not convert to json");
 
         // Format as map to easily access refresh token
-        let user_map: HashMap<String, String> = file.users
+        /*let user_map: HashMap<String, String> = file.users
             .iter()
             .map(|u| (u.name.clone(), u.refresh.clone()))
-            .collect();
-        let refresh = String::from(user_map.get(username.trim()).expect("Not found"));
+            .collect();*/
+        let refresh = String::from(file.refresh);
 
         let auth_url = "https://accounts.spotify.com/api/token";
         let client = reqwest::Client::new();
@@ -224,7 +224,7 @@ impl SpotifyUser {
                     if buffer.starts_with(b"GET /callback?code="){
                         code = String::from_utf8_lossy(&buffer[19..227]).to_string();
                         let status_line = "HTTP/1.1 200 OK";
-                        let contents = fs::read_to_string("response.html").expect("Unable to read file");
+                        let contents = include_str!("response.html");
                         let length = contents.len();
                         let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
 
@@ -315,30 +315,31 @@ impl SpotifyUser {
 }
 
 // Generates the list of users logged in
-    pub(crate) fn get_user_list() -> Vec<String> {
-        let file = match fs::read_to_string("users.json"){
+    pub(crate) fn get_user() -> User {
+        let file = match fs::read_to_string("user.json"){
             Ok(f) => f,
-            Err(_) => return vec![]
+            Err(_) => panic!("Could not read user.json"),
         };
 
-        let user_list: Vec<User> = match serde_json::from_str::<Users>(file.as_str()) {
-            Ok(f) => f.users,
-            Err(_) => return vec![],
+        match serde_json::from_str::<User>(file.as_str()) {
+            Ok(user) => return user,
+            Err(_) => panic!("Could not match json file to User struct"),
         };
+        /*
 
         user_list
             .iter()
             .map(|u| u.name.clone())
-            .collect() // Parse json file and generate a list of usernames
+            .collect() // Parse json file and generate a list of usernames*/
     }
 
-    pub(crate) fn delete_user(to_delete: String) {
-        let file = File::open("users.json").expect("could not open file");
+    /*pub(crate) fn delete_user(to_delete: String) {
+        let file = File::open("user.json").expect("could not open file");
         let reader = BufReader::new(file);
         let mut file: Users = match serde_json::from_reader(reader) {
             Ok(f) => f,
             Err(_) => {
-                fs::write("users.json", "{\"users\": []}").expect("Failed to write");
+                fs::write("user.json", "{\"users\": []}").expect("Failed to write");
                 return;
             }
         };
@@ -346,11 +347,11 @@ impl SpotifyUser {
         for user in file.users.iter().enumerate(){
             if user.1.name.trim() == to_delete.trim() {
                 file.users.remove(user.0);
-                fs::write("users.json", serde_json::to_string_pretty(&file).expect("Could not convert")).expect("Could not write");
+                fs::write("user.json", serde_json::to_string_pretty(&file).expect("Could not convert")).expect("Could not write");
                 return;
             }
         }
-    }
+    }*/
 
 #[tokio::main]
 pub(crate) async fn generate_user(username: String, client: SpotifyUser) -> String {
@@ -379,58 +380,58 @@ pub(crate) async fn generate_user(username: String, client: SpotifyUser) -> Stri
         reqwest::StatusCode::OK => {
             match response.json::<AuthResponse>().await {
                 Ok(parsed) => {
-                    let mut file: Users = match fs::read_to_string("users.json") {
+                    let mut file: User = match fs::read_to_string("user.json") {
                         Ok(f) => {
-                            // Check if users.json has been corrupted, and correct if necessary
-                            match serde_json::from_str::<Users>(f.as_str()){
+                            // Check if user.json has been corrupted, and correct if necessary
+                            match serde_json::from_str::<User>(f.as_str()){
                                 Ok(f) =>  {
                                     f
                                 },
                                 Err(_) =>  {
-                                    fs::write("users.json", "{\"users\": []}").expect("Failed to write");
-                                    Users {users: vec![]}
+                                    fs::write("user.json", "{}").expect("Failed to write");
+                                    User {name: String::new(), refresh: String::new()}
                                 }
                             }
                         }
                         Err(_) => {
-                            println!("users.json does not exist, creating..");
-                            fs::write("users.json", "{\"users\": []}").expect("Failed to write");
-                            Users {users: vec![]}
+                            println!("user.json does not exist, creating..");
+                            fs::write("user.json", "{}").expect("Failed to write");
+                            User {name: String::new(), refresh: String::new()}
                         }
                     };
                         
 
                     let refresh_token = parsed.refresh_token;
-                    let mut user_exists = -1;
+                    //let mut user_exists = -1;
 
-                    // Check if user exists already to avoid duplicate entries
+                    /*// Check if user exists already to avoid duplicate entries
                     for user in file.users.iter().enumerate() {
                         if user.1.name.trim() == username.trim() {
                             user_exists = user.0 as i32; // Assign to index where user is present
                             break;
                         }
-                    }
+                    }*/
 
-                    // Assign user with refresh token in users.json
-                    if user_exists == -1 {
+                    // Assign user with refresh token in user.json
+                    //if user_exists == -1 {
                         // if user does NOT exist, add new json entry
                         println!(
                             "Old json: {}",
                             serde_json::to_string_pretty(&file).expect("Oopsie")
                         );
-                        let new_user: User = User {
+                        let file: User = User {
                             name: String::from(username.trim()),
                             refresh: String::from(refresh_token),
                         };
-                        file.users.push(new_user);
-                    } else {
+                        
+                    /*} else {
                         // if user DOES exist, edit existing json entry
                         let new_user = file.users.get_mut(user_exists as usize).unwrap();
                         new_user.refresh = String::from(refresh_token);
-                    }
+                    }*/
                     println!("New json: {}", serde_json::to_string_pretty(&file).expect("Oopsie"));
                     fs::write(
-                        "users.json",
+                        "user.json",
                         serde_json::to_string_pretty(&file).expect("Could not convert")
                     ).expect("Could not writes");
                     parsed.access_token // Return recieved access token

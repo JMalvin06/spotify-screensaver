@@ -1,0 +1,5 @@
+---
+triple:          'x86_64-apple-darwin'
+binary-path:     '/Users/john/projects/rust/spotify_user/SpotifyScreensaver/build/Release/SpotifyScreensaver.saver/Contents/MacOS/SpotifyScreensaver'
+relocations:     []
+...
