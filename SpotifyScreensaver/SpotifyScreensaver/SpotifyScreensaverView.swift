@@ -52,31 +52,8 @@ class SpotifyScreensaverView: ScreenSaverView {
     }
     
     
-    func writeLog(_ message: String) {
-        let fileManager = FileManager.default
-        let logsDirectory = fileManager.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        let logFileURL = logsDirectory.appendingPathComponent("app.log")
-        
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let logEntry = "[\(timestamp)] \(message)\n"
-        
-        // If file exists, append; otherwise create it
-        if fileManager.fileExists(atPath: logFileURL.path) {
-            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                fileHandle.seekToEndOfFile()
-                if let data = logEntry.data(using: .utf8) {
-                    fileHandle.write(data)
-                }
-                try? fileHandle.close()
-            }
-        } else {
-            try? logEntry.write(to: logFileURL, atomically: true, encoding: .utf8)
-        }
-    }
-    
     override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
-        writeLog("Hello worlds!")
         squarePosition = CGPoint(x: frame.width / 2, y: frame.height / 2)
         squareVelocity = CGVector(dx: 2 , dy: 2)
         animationTimeInterval = 1.0/60
@@ -91,11 +68,8 @@ class SpotifyScreensaverView: ScreenSaverView {
                     let secret = jsonResult["secret"] as? String {
                     self.ID = id
                     self.SECRET = secret
-                    writeLog("FOUND SECRET AND ID" + id + " " + secret)
                 }
-            } catch {
-                writeLog("FAILED")
-            }
+            } catch {}
         }
         
         if let url = saverBundle.url(forResource: "user", withExtension: "json") {
@@ -103,13 +77,9 @@ class SpotifyScreensaverView: ScreenSaverView {
                 let data = try Data(contentsOf: url, options: .mappedIfSafe)
                 let jsonResult = try JSONSerialization.jsonObject(with: data, options: .mutableLeaves)
                 if let jsonResult = jsonResult as? Dictionary<String, AnyObject>, let refresh = jsonResult["refresh"] as? String {
-                    
-                    writeLog("Refreshed!")
                     self.REFRESH = refresh
                 }
-            } catch {
-                writeLog("FAILED")
-            }
+            } catch {}
         }
         
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
@@ -122,16 +92,12 @@ class SpotifyScreensaverView: ScreenSaverView {
     override func startAnimation() {
         super.startAnimation()
         let saverBundle = Bundle(for: type(of: self))
-        writeLog(saverBundle.description)
         if let url = saverBundle.url(forResource: "placeholder", withExtension: "png") {
-            writeLog("REFERENCED IMAGE")
             let image = NSImage(byReferencing: url)
             Task {
                 @MainActor in self.cachedImage = image
             }
             Task{ await generateToken()}
-        } else {
-            writeLog("FAILED TO REFERENCE IMAGE")
         }
     }
     
