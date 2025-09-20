@@ -1,7 +1,7 @@
-use std::{fs, process::Command, slice::Windows, str, time::Duration};
+use std::{fs, process::Command, time::Duration};
 
 use iced::{
-    alignment::Vertical::Top, time, widget::{ button, container, image::Handle, row, text, text_input, Container }, window::{self, Id}, Alignment::Center, Length, Settings, Subscription, Task
+    alignment::Vertical::Top, time, widget::{ button, container, image::Handle, row, text, text_input, Container }, window::{self}, Alignment::Center, Length, Subscription, Task
 };
 use iced::widget::column;
 use iced::widget::image;
@@ -36,22 +36,20 @@ impl Default for State {
 
 #[derive(Clone, Debug)]
 enum Message {
-    SelectedUser(String),
     NextPage,
-    SignIn,
-    InputValue(String),
+    InputID(String),
+    InputSecret(String),
     ToSelection,
     RefreshTrack(()),
-    DeleteUser
 }
 
 struct LoginMenu {
     client: SpotifyUser,
     cached_track: Track,
     cached_image_data: Handle,
-    selection: String,
     content: Status,
-    input: String,
+    id_input: String,
+    secret_input: String,
     state: State,
 }
 
@@ -69,11 +67,11 @@ impl LoginMenu {
         (
             Self {
                 client: SpotifyUser::new(),
-                selection: "Select a user..".to_string(),
                 cached_track: spotify::Track::default(),
                 cached_image_data: Handle::from_path("images/placeholder.jpg".to_string()),
                 content: Status::default(),
-                input: String::default(),
+                id_input: String::default(),
+                secret_input: String::default(),
                 state: State::Idle,
             },
             Task::none(),
@@ -83,11 +81,9 @@ impl LoginMenu {
     fn view(&self) -> Container<'_, Message> {
         match self.content {
             Status::UserSelect => {
-                let user = spotify::get_user().name;
-
                 container(
                     column![
-                        text(format!("Would you like to create a screensaver with {user}?")).size(15),
+                        text(format!("Would you like to create a screensaver for {}?", self.client.username)).size(15),
                         button("Confirm").on_press(Message::NextPage)
                     ].align_x(Center)
                 )
@@ -96,42 +92,16 @@ impl LoginMenu {
                 .align_x(Center)
                 .align_y(Center)
                 .padding(10)
-                /*
-                let list = iced::widget::pick_list(
-                    spotify::get_user_list(),
-                    Some(self.selection.clone()),
-                    Message::SelectedUser
-                );
-
-                container(
-                    column![
-                        text("User Login").size(50),
-                        list.placeholder("Select a user.."),
-                        column![
-                            row![
-                                button("Sign In").on_press(Message::SignIn),
-                                button("Next").on_press(Message::NextPage)
-                            ].spacing(50),
-                            button("Delete User").on_press(Message::DeleteUser),
-                        ].align_x(Center)
-                        .spacing(10),
-                    ]
-                        .align_x(Center)
-                        .spacing(20),
-                )
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .align_x(Center)
-                    .align_y(Center)
-                    .padding(100)
-                    */
             }
             Status::SignIn => {
                 container(
                     column![
-                        text_input("Spotify Username", &self.input)
+                        text_input("Client ID", &self.id_input)
+                        .width(250)
+                        .on_input(|value| Message::InputID(value)),
+                        text_input("Client Secret", &self.secret_input)
                             .width(250)
-                            .on_input(|value| Message::InputValue(value))
+                            .on_input(|value| Message::InputSecret(value))
                             .on_submit(Message::ToSelection),
                         row![
                             button("Submit").on_press(Message::ToSelection)
@@ -144,6 +114,7 @@ impl LoginMenu {
                     .align_y(Center)
                     .padding(20)
             }
+
             Status::CurrentTrack => {
                 let current_track = self.client.clone().get_track();
                 let current_artists = current_track.artists
@@ -203,18 +174,20 @@ impl LoginMenu {
 
     fn update(&mut self, message: Message) {
         match message {
-            Message::SelectedUser(value) => {
-                self.selection = value;
-            }
             Message::NextPage => {
                 //if self.selection != String::from("Select a user.."){
                      
-                    let file = "user.json";
+                    let user_file = "user.json";
+                    let constants_file = "constants.json";
                     let destination = FileDialog::new().pick_folder();
                     let path = destination.clone().unwrap().as_path().to_path_buf();
-                    let mut new_path = path.clone();
-                    new_path.push("SpotifyScreensaver/user.json");
-                    fs::copy(file,new_path).expect("Unable to copy file to resources");
+                    let mut user_path = path.clone();
+                    user_path.push("SpotifyScreensaver/user.json");
+                    let mut constants_path = path.clone();
+                    constants_path.push("SpotifyScreensaver/constants.json");
+                    fs::copy(user_file,user_path).expect("Unable to copy file to resources");
+                    fs::copy(constants_file,constants_path).expect("Unable to copy file to resources");
+
 
                     Command::new("xcodebuild").current_dir(path).arg("build").output().expect("Could not build");
                     self.refresh_track();
@@ -224,14 +197,18 @@ impl LoginMenu {
                     self.content = Status::CurrentTrack;
                 //}
             }
-            Message::SignIn => {
-                self.content = Status::SignIn;
+            Message::InputID(value) => {
+                self.id_input = value;
             }
-            Message::InputValue(value) => {
-                self.input = value;
+            Message::InputSecret(value) => {
+                self.secret_input = value;
             }
             Message::ToSelection => {
-                spotify::generate_user(self.input.clone(), self.client.clone());
+                self.client.set_id(self.id_input.clone());
+                self.client.set_secret(self.secret_input.clone());
+                self.client.clone().generate_user();
+                self.client.generate_token();
+                self.client.set_username();
 
                 self.content = Status::UserSelect;
             }
@@ -242,10 +219,6 @@ impl LoginMenu {
                     self.cached_image_data = self.get_album_art();
                     self.cached_track = current_track.clone();
                 } 
-            },
-            Message::DeleteUser => {
-                //spotify::delete_user(self.selection.clone());
-                self.selection = String::from("Select a user..");
             }
         }
     }

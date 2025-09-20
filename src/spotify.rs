@@ -4,15 +4,13 @@ use url_search_params;
 use open;
 use tokio::{self};
 
-use std::{fs::File, io::{BufReader, Read, Write}, net::TcpListener};
+use core::panic;
+use std::{io::{Read, Write}, net::TcpListener};
 use std::collections::HashMap;
 use std::fs;
 
 
-mod constants; // Stores client ID and secret for safekeeping
 const URI: &str = "http://localhost:8888/callback";
-const ID: &str = constants::ID;
-const SECRET: &str = constants::SECRET;
 
 // TODO: Handle all errors without panic
 // TODO: Organize structs
@@ -89,9 +87,19 @@ struct Users {
 }*/
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct User {
-    pub(crate) name: String,
+pub struct Auth {
     refresh: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct User {
+    display_name: String
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Constants {
+    id: String,
+    secret: String
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -112,8 +120,11 @@ struct URL {
 
 #[derive(Default, Clone)]
 pub struct SpotifyUser {
+    pub(crate) username: String,
     token: String,
-    current_track: Track
+    current_track: Track,
+    id: String,
+    secret: String
 }
 
 
@@ -122,10 +133,7 @@ pub struct SpotifyUser {
 impl SpotifyUser {
 
     pub fn new() -> SpotifyUser{
-        Self { 
-            token: String::new(), 
-            current_track: Track::default()
-        }
+        Self::default()
     }
 
     pub fn get_track(self) -> Track {
@@ -140,6 +148,52 @@ impl SpotifyUser {
         self.token.is_empty()
     }
 
+    pub fn set_id(&mut self, id: String) {
+        self.id = id;
+    }
+
+    pub fn set_secret(&mut self, secret: String) {
+        self.secret = secret;
+    }
+
+    #[tokio::main]
+    pub async fn set_username(&mut self) {
+        let url = format!("https://api.spotify.com/v1/me");
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(url.clone())
+            .bearer_auth(self.token.clone())
+            .header(ACCEPT, "application/json") // Recieve json response
+            .send()
+            .await
+            .unwrap();
+
+        match response.status() {
+            reqwest::StatusCode::OK => {
+                let res = response.text().await.unwrap();
+                match serde_json::from_str::<User>(&res.clone()) {
+                    Ok(user) => {
+                        println!("NAME SET TO: {}", user.display_name);
+                        self.username = user.display_name
+                    }
+                    Err(_) => {
+                        panic!("Could not generate username")
+                    }
+                }
+            }
+            reqwest::StatusCode::UNAUTHORIZED => {
+                panic!("Unauthorized");
+            }
+            reqwest::StatusCode::NO_CONTENT => {
+                panic!("No content")
+            }
+            _other => {
+                panic!("panicked with status code: {}", response.text().await.unwrap())
+            }
+        }
+    }
+
     // TODO: Organize functions
     
 
@@ -147,7 +201,7 @@ impl SpotifyUser {
     pub(crate) async fn generate_token(&mut self) {
         println!("Generating token!");
         // Convert user.json to struct format
-        let file: User = serde_json
+        let file: Auth = serde_json
             ::from_str(fs::read_to_string("user.json").expect("Error opening file").as_str())
             .expect("Could not convert to json");
 
@@ -166,15 +220,14 @@ impl SpotifyUser {
             (String::from("grant_type"), String::from("refresh_token")),
             (String::from("refresh_token"), refresh),
         ]);
-
+        
         let response = client
             .post(auth_url)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .basic_auth(ID, Some(SECRET)) // Authorize based on client ID and secret
+            .basic_auth(self.id.clone(), Some(self.secret.clone())) // Authorize based on client ID and secret
             .body(url_search_params::build_url_search_params(params))
             .send().await
             .unwrap();
-
         match response.status() {
             reqwest::StatusCode::OK => {
                 match response.json::<Access>().await {
@@ -192,11 +245,11 @@ impl SpotifyUser {
     }
 
     pub(crate) fn retrieve_code(&self) -> String {
-        let scope = "user-read-playback-state";
+        let scope = "user-read-private user-read-email user-read-playback-state";
         // Parameters for body of URL link
         let params = HashMap::from([
             (String::from("response_type"), String::from("code")),
-            (String::from("client_id"), String::from(ID)),
+            (String::from("client_id"), String::from(self.id.clone())),
             (String::from("scope"), String::from(scope)),
             (String::from("redirect_uri"), String::from(URI)),
         ]);
@@ -204,8 +257,7 @@ impl SpotifyUser {
         // Open listener at URI address
         let listener = match  TcpListener::bind("127.0.0.1:8888"){
             Ok(l) => l,
-            Err(e) => {panic!("Error Code: {:?}", e)
-    },
+            Err(e) => {panic!("Error Code: {:?}", e)},
         };
 
         let url_out = format!(
@@ -222,7 +274,7 @@ impl SpotifyUser {
                     let mut buffer = [0; 512];
                     req.read(&mut buffer).unwrap();
                     if buffer.starts_with(b"GET /callback?code="){
-                        code = String::from_utf8_lossy(&buffer[19..227]).to_string();
+                        code = String::from_utf8_lossy(&buffer[19..275]).to_string();
                         let status_line = "HTTP/1.1 200 OK";
                         let contents = include_str!("response.html");
                         let length = contents.len();
@@ -249,18 +301,19 @@ impl SpotifyUser {
             .get(url.clone())
             .header(AUTHORIZATION, format!("Bearer {}",self.token)) // Authorization based on token
             .header(ACCEPT, "application/json") // Recieve json response
-            .send().await
+            .send()
+            .await
             .unwrap();
 
         match response.status() {
             reqwest::StatusCode::OK => {
-                let response = response.text().await.unwrap();
-                match serde_json::from_str::<Player>(&response.clone()) {
+                let res = response.text().await.unwrap();
+                match serde_json::from_str::<Player>(&res.clone()) {
                     Ok(parsed) => {
                         self.current_track = parsed.item; // Return Track struct
                     }
                     Err(e) => {
-                        match serde_json::from_str::<Playlist>(&response.clone()) {
+                        match serde_json::from_str::<Playlist>(&res.clone()) {
                             Ok(parsed) => {
                                 if parsed.context.external_urls.spotify.contains("37i9dQZF1EYkqdzj48dyYq")
                                 {
@@ -285,7 +338,6 @@ impl SpotifyUser {
                     }
                 }
             }
-            // TODO: Add logic to generate new token
             reqwest::StatusCode::UNAUTHORIZED => {
                 println!("Failed to aquire data..\nGenerating new token...");
                 self.token = String::new();
@@ -308,137 +360,58 @@ impl SpotifyUser {
         return img_bytes;
     }
 
-    
+    #[tokio::main]
+    pub(crate) async fn generate_user(self) -> String {
+        let code = self.retrieve_code();
+        println!("Generating Token...");
+        let auth_url = "https://accounts.spotify.com/api/token";
 
+        // Parameters for body of API call
+        let params = HashMap::from([
+            (String::from("grant_type"), String::from("authorization_code")),
+            (String::from("code"), String::from(code)),
+            (String::from("redirect_uri"), String::from(URI.trim())),
+        ]);
 
-    
-}
+        //println!("ID: {id}");
+        let client = reqwest::Client::new(); // Initialize client to handle API call
+        let response = client
+            .post(auth_url)
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .basic_auth(self.id.clone(), Some(self.secret.clone()))
+            .body(url_search_params::build_url_search_params(params))
+            .header(ACCEPT, "application/json") // Recieve response in json format
+            .send().await
+            .unwrap();
 
-// Generates the list of users logged in
-    pub(crate) fn get_user() -> User {
-        let file = match fs::read_to_string("user.json"){
-            Ok(f) => f,
-            Err(_) => panic!("Could not read user.json"),
-        };
-
-        match serde_json::from_str::<User>(file.as_str()) {
-            Ok(user) => return user,
-            Err(_) => panic!("Could not match json file to User struct"),
-        };
-        /*
-
-        user_list
-            .iter()
-            .map(|u| u.name.clone())
-            .collect() // Parse json file and generate a list of usernames*/
-    }
-
-    /*pub(crate) fn delete_user(to_delete: String) {
-        let file = File::open("user.json").expect("could not open file");
-        let reader = BufReader::new(file);
-        let mut file: Users = match serde_json::from_reader(reader) {
-            Ok(f) => f,
-            Err(_) => {
-                fs::write("user.json", "{\"users\": []}").expect("Failed to write");
-                return;
-            }
-        };
-
-        for user in file.users.iter().enumerate(){
-            if user.1.name.trim() == to_delete.trim() {
-                file.users.remove(user.0);
-                fs::write("user.json", serde_json::to_string_pretty(&file).expect("Could not convert")).expect("Could not write");
-                return;
-            }
-        }
-    }*/
-
-#[tokio::main]
-pub(crate) async fn generate_user(username: String, client: SpotifyUser) -> String {
-    let code = client.retrieve_code();
-    println!("Generating Token...");
-    let auth_url = "https://accounts.spotify.com/api/token";
-
-    // Parameters for body of API call
-    let params = HashMap::from([
-        (String::from("grant_type"), String::from("authorization_code")),
-        (String::from("code"), String::from(code)),
-        (String::from("redirect_uri"), String::from(URI.trim())),
-    ]);
-
-    let client = reqwest::Client::new(); // Initialize client to handle API call
-    let response = client
-        .post(auth_url)
-        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .basic_auth(ID, Some(SECRET))
-        .body(url_search_params::build_url_search_params(params))
-        .header(ACCEPT, "application/json") // Recieve response in json format
-        .send().await
-        .unwrap();
-
-    match response.status() {
-        reqwest::StatusCode::OK => {
-            match response.json::<AuthResponse>().await {
-                Ok(parsed) => {
-                    let mut file: User = match fs::read_to_string("user.json") {
-                        Ok(f) => {
-                            // Check if user.json has been corrupted, and correct if necessary
-                            match serde_json::from_str::<User>(f.as_str()){
-                                Ok(f) =>  {
-                                    f
-                                },
-                                Err(_) =>  {
-                                    fs::write("user.json", "{}").expect("Failed to write");
-                                    User {name: String::new(), refresh: String::new()}
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            println!("user.json does not exist, creating..");
-                            fs::write("user.json", "{}").expect("Failed to write");
-                            User {name: String::new(), refresh: String::new()}
-                        }
-                    };
-                        
-
-                    let refresh_token = parsed.refresh_token;
-                    //let mut user_exists = -1;
-
-                    /*// Check if user exists already to avoid duplicate entries
-                    for user in file.users.iter().enumerate() {
-                        if user.1.name.trim() == username.trim() {
-                            user_exists = user.0 as i32; // Assign to index where user is present
-                            break;
-                        }
-                    }*/
-
-                    // Assign user with refresh token in user.json
-                    //if user_exists == -1 {
-                        // if user does NOT exist, add new json entry
-                        println!(
-                            "Old json: {}",
-                            serde_json::to_string_pretty(&file).expect("Oopsie")
-                        );
-                        let file: User = User {
-                            name: String::from(username.trim()),
+        match response.status() {
+            reqwest::StatusCode::OK => {
+                match response.json::<AuthResponse>().await {
+                    Ok(parsed) => {
+                        let refresh_token = parsed.refresh_token;
+                        let file: Auth = Auth {
                             refresh: String::from(refresh_token),
                         };
-                        
-                    /*} else {
-                        // if user DOES exist, edit existing json entry
-                        let new_user = file.users.get_mut(user_exists as usize).unwrap();
-                        new_user.refresh = String::from(refresh_token);
-                    }*/
-                    println!("New json: {}", serde_json::to_string_pretty(&file).expect("Oopsie"));
-                    fs::write(
-                        "user.json",
-                        serde_json::to_string_pretty(&file).expect("Could not convert")
-                    ).expect("Could not writes");
-                    parsed.access_token // Return recieved access token
+                            
+                        fs::write(
+                            "user.json",
+                            serde_json::to_string_pretty(&file).expect("Could not convert")
+                        ).expect("Could not write");
+                        let constants_file: Constants = Constants{ 
+                            id: self.id, 
+                            secret: self.secret
+                        };
+                        fs::write(
+                            "constants.json", 
+                        serde_json::to_string_pretty(&constants_file).expect("could not convert")).expect("Failed to write to constants.json");
+
+                        parsed.access_token // Return recieved access token
+                    }
+                    Err(e) => panic!("the response did not match the struct {:?}", e),
                 }
-                Err(e) => panic!("the response did not match the struct {:?}", e),
             }
+            other => panic!("there was an unexpected error in the code! {:?}", response.text().await.unwrap())
         }
-        other => panic!("there was an unexpected error in the code! {:?}", other),
     }
+
 }
