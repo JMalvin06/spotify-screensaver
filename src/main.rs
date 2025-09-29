@@ -1,13 +1,12 @@
-use std::{fs, process::Command, time::Duration};
+use std::{fs, path::{Path, PathBuf}, process::Command};
 
 use iced::{
-    alignment::Vertical::Top, time, widget::{ button, container, image::Handle, row, text, text_input, Container }, window::{self}, Alignment::Center, Length, Subscription, Task
+    alignment::{Horizontal::{self}}, widget::{ button, container, row, text, text_input, Container }, window::{self}, Alignment::Center, Color, Font, Length, Task
 };
 use iced::widget::column;
-use iced::widget::image;
 use rfd::FileDialog;
 
-use crate::spotify::{SpotifyUser, Track};
+use crate::spotify::{SpotifyUser};
 mod spotify;
 
 
@@ -16,21 +15,11 @@ mod spotify;
 enum Status {
     UserSelect,
     SignIn,
-    CurrentTrack,
+    SuccessPage,
 }
 impl Default for Status {
     fn default() -> Self {
         Status::SignIn
-    }
-}
-
-enum State {
-    Idle,
-    Refreshing,
-}
-impl Default for State {
-    fn default() -> Self {
-        State::Idle
     }
 }
 
@@ -40,24 +29,55 @@ enum Message {
     InputID(String),
     InputSecret(String),
     ToSelection,
-    RefreshTrack(()),
+    SelectBuild,
+    SelectOutput,
+    CloseWindow
 }
+
 
 struct LoginMenu {
     client: SpotifyUser,
-    cached_track: Track,
-    cached_image_data: Handle,
     content: Status,
     id_input: String,
     secret_input: String,
-    state: State,
+    build_dir: PathBuf,
+    build_status: (String, bool),
+    output_dir: PathBuf,
+    output_status: (String, bool),
+    sign_in_message: String
+}
+
+impl Default for LoginMenu {
+    fn default() -> Self {
+        Self { 
+            client: Default::default(), 
+            content: Default::default(), 
+            id_input: Default::default(), 
+            secret_input: Default::default(), 
+            build_dir: {
+                let parent_dir = std::env::current_exe()
+                                          .unwrap()
+                                          .parent()
+                                          .expect("Cannot find parent")
+                                          .join(Path::new("SpotifyScreensaver"));
+                if containts_valid(&parent_dir) {
+                    parent_dir
+                } else {
+                    Default::default()
+                }
+            }, 
+            build_status: (String::default(), false),
+            output_dir: std::env::current_exe().unwrap().parent().expect("Cannot find parent").to_path_buf(),
+            output_status: (String::default(), false),
+            sign_in_message: String::default()
+        }
+    }
 }
 
 
 
 
 
-// TODO add multithreaded support to not block app logic
 impl LoginMenu {
     fn title(&self) -> String {
         String::from("User Menu")
@@ -65,15 +85,7 @@ impl LoginMenu {
 
     fn new() -> (LoginMenu, Task<Message>) {
         (
-            Self {
-                client: SpotifyUser::new(),
-                cached_track: spotify::Track::default(),
-                cached_image_data: Handle::from_path("images/placeholder.jpg".to_string()),
-                content: Status::default(),
-                id_input: String::default(),
-                secret_input: String::default(),
-                state: State::Idle,
-            },
+            Self::default(),
             Task::none(),
         )
     }
@@ -81,11 +93,30 @@ impl LoginMenu {
     fn view(&self) -> Container<'_, Message> {
         match self.content {
             Status::UserSelect => {
+                let build_red = if self.build_status.1 {Color::from_rgb(255.0, 255.0,255.0)} else {Color::from_rgb(100.0, 0.0, 0.0)};
                 container(
                     column![
-                        text(format!("Would you like to create a screensaver for {}?", self.client.username)).size(15),
+                        text(format!("Successfully found account: {}", self.client.username)).size(15),
+
+                        row![
+                            text("Build folder: ").size(15),
+                            text(&self.build_status.0).size(15).color(build_red)
+                        ].width(Length::Fixed(300.0)),
+                        row![
+                            text_input("Build Directory", &self.build_dir.to_str().expect("Could not convert")),
+                            button("...").on_press(Message::SelectBuild)
+                        ].width(Length::Fixed(300.0)),
+
+                        row![
+                            text("Output folder: ").size(15),
+                        ].width(Length::Fixed(300.0)),
+                        row![
+                            text_input("Output Directory", &self.output_dir.to_str().expect("Could not convert")),
+                            button("...").on_press(Message::SelectOutput)
+                        ].width(Length::Fixed(300.0)),
+
                         button("Confirm").on_press(Message::NextPage)
-                    ].align_x(Center)
+                    ].align_x(Horizontal::Center)
                 )
                 .height(Length::Fill)
                 .width(Length::Fill)
@@ -105,7 +136,8 @@ impl LoginMenu {
                             .on_submit(Message::ToSelection),
                         row![
                             button("Submit").on_press(Message::ToSelection)
-                        ].spacing(30)
+                        ].spacing(30),
+                        text(&self.sign_in_message).color(Color::from_rgb(255.0, 0.0, 0.0))
                     ].align_x(Center)
                 )
                     .height(Length::Fill)
@@ -114,88 +146,54 @@ impl LoginMenu {
                     .align_y(Center)
                     .padding(20)
             }
-
-            Status::CurrentTrack => {
-                let current_track = self.client.clone().get_track();
-                let current_artists = current_track.artists
-                    .iter()
-                    .map(|a| a.name.clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                
+            Status::SuccessPage => {
                 container(
-                        column![
-                            text("Current Track").size(50),
-                            image::viewer(self.cached_image_data.clone()).height(Length::Fixed(300.0)),
-                            text(current_track.name).size(40),
-                            text(current_artists).size(25),
-                        ]
-                            .spacing(30)
-                            .align_x(Center)
-                    )
-                        .height(Length::Fill)
-                        .width(Length::Fill)
-                        .align_x(Center)
-                        .align_y(Top)
-            }
-        }
+                    column![
+                        text("Success!")
+                        .size(18)
+                        .font(Font{weight: iced::font::Weight::Bold, ..Font::default()}),
+                        text("You can now find the built screensaver in the output directory")
+                        .size(16),
+                        button("Close Installer").on_press(Message::CloseWindow)
+                    ]
+                    .align_x(Center)
+                    .spacing(10)
+                )
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .align_x(Center)
+                .align_y(Center)
+                .padding(10)
+            },
+                    }
     }
 
-    fn get_album_art(&self) -> Handle {
-        let current_image = self.client.clone().get_track().album.images[0].clone();
-        if current_image.url.contains("placeholder.jpg") {
-            return Handle::from_path(current_image.url);
-        } else {
-            println!("new album image: {}", current_image.url);
-            return Handle::from_bytes(self.client.clone().get_image_data());
-        }
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        let tick: Subscription<Message> = match self.state {
-            State::Idle => Subscription::none(),
-            State::Refreshing { .. } => {
-                let t = time
-                    ::every(Duration::from_millis(1000))
-                    .map(|_arg0: std::time::Instant| Message::RefreshTrack(()));
-                return t;
-            }
-        };
-
-        return tick;
-    }
-
-    fn refresh_track(&mut self) {
-        if self.client.clone().token_empty(){
-            self.client.generate_token();
-        }
-        self.client.refresh_track();
-    }
 
     fn update(&mut self, message: Message) {
         match message {
             Message::NextPage => {
-                //if self.selection != String::from("Select a user.."){
-                     
+                if self.build_dir.exists() {
                     let user_file = "user.json";
                     let constants_file = "constants.json";
-                    let destination = FileDialog::new().pick_folder();
-                    let path = destination.clone().unwrap().as_path().to_path_buf();
-                    let mut user_path = path.clone();
+                    let mut user_path = self.build_dir.clone();
                     user_path.push("SpotifyScreensaver/user.json");
-                    let mut constants_path = path.clone();
+                    let mut constants_path = self.build_dir.clone();
                     constants_path.push("SpotifyScreensaver/constants.json");
                     fs::copy(user_file,user_path).expect("Unable to copy file to resources");
                     fs::copy(constants_file,constants_path).expect("Unable to copy file to resources");
 
+                    Command::new("xcodebuild").current_dir(&self.build_dir).arg("build").output().expect("Could not build");
+                    
+                    let saver_path = self.build_dir.clone().join(Path::new("build/Release/SpotifyScreensaver.saver"));
+                    let  output_path: PathBuf = self.output_dir.clone().join(Path::new("SpotifyScreensaver.saver"));
 
-                    Command::new("xcodebuild").current_dir(path).arg("build").output().expect("Could not build");
-                    self.refresh_track();
-                    self.cached_image_data = self.get_album_art();
-                    self.cached_track = self.client.clone().get_track().clone();
-                    self.state = State::Refreshing;
-                    self.content = Status::CurrentTrack;
-                //}
+                    if saver_path.exists() {
+                        copy_dir(saver_path, output_path).expect("Could not copy saver to output directory");
+                    } else {
+                        panic!("Could not find file");
+                    }
+                    self.content = Status::SuccessPage;
+                }
             }
             Message::InputID(value) => {
                 self.id_input = value;
@@ -204,21 +202,42 @@ impl LoginMenu {
                 self.secret_input = value;
             }
             Message::ToSelection => {
-                self.client.set_id(self.id_input.clone());
-                self.client.set_secret(self.secret_input.clone());
-                self.client.clone().generate_user();
-                self.client.generate_token();
-                self.client.set_username();
-
-                self.content = Status::UserSelect;
+                self.client.set_id(&self.id_input);
+                self.client.set_secret(&self.secret_input);
+                println!("Empty? {}", self.id_input.is_empty());
+                if !(self.id_input.is_empty() || self.secret_input.is_empty()) && self.client.generate_user(){
+                    self.client.generate_token();
+                    self.client.set_username();
+                    self.content = Status::UserSelect;
+                } else {
+                    self.sign_in_message = String::from("Invalid ID or secret, please try again");
+                }
             }
-            Message::RefreshTrack(_) => {
-                self.refresh_track();
-                let current_track = self.client.clone().get_track();
-                if current_track != self.cached_track {
-                    self.cached_image_data = self.get_album_art();
-                    self.cached_track = current_track.clone();
-                } 
+            Message::CloseWindow => {
+                std::process::exit(0);
+            }
+            Message::SelectBuild => {
+                let destination = FileDialog::new().pick_folder();
+                if destination.is_some() {
+                    let path = destination.as_ref().unwrap();
+                    if containts_valid(path) {
+                        self.build_dir = destination.unwrap();
+                        self.build_status = (String::from("valid directory"), true);
+                    } else {
+                        self.build_status = (String::from("invalid directory"), false);
+                    }
+                } else {
+                    self.build_status = (String::from("please select a valid folder"), false);
+                }
+            }
+            Message::SelectOutput => {
+                let destination = FileDialog::new().pick_folder();
+                if destination.is_some() {
+                    self.output_dir = destination.unwrap();
+                    self.output_status = (String::from("valid directory"), true);
+                } else {
+                    self.output_status = (String::from("please select a valid folder"), false);
+                }
             }
         }
     }
@@ -233,7 +252,25 @@ fn main() -> iced::Result {
     };
     let app = iced
         ::application(LoginMenu::title, LoginMenu::update, LoginMenu::view)
-        .subscription(LoginMenu::subscription)
         .window(window_settings);
     app.run_with(LoginMenu::new)
+}
+
+
+fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::create_dir_all(&dst).expect("Cannot Create Directory");
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+fn containts_valid(path: &Path) -> bool {
+    return path.exists() && path.join(Path::new("SpotifyScreensaver.xcodeproj")).exists()
 }
