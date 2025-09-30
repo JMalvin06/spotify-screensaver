@@ -247,7 +247,7 @@ impl SpotifyUser {
                 }
             }
             other => {
-                println!("{}, {}", other, code);
+                println!("There was an unexpected error: {}", other);
                 return false
             }
         }

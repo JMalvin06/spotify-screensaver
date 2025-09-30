@@ -204,7 +204,6 @@ impl LoginMenu {
             Message::ToSelection => {
                 self.client.set_id(&self.id_input);
                 self.client.set_secret(&self.secret_input);
-                println!("Empty? {}", self.id_input.is_empty());
                 if !(self.id_input.is_empty() || self.secret_input.is_empty()) && self.client.generate_user(){
                     self.client.generate_token();
                     self.client.set_username();
