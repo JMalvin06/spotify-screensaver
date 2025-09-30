@@ -3,7 +3,7 @@ This is a simple little screensaver that displays a user's currently playing spo
 
 ![demo](https://raw.githubusercontent.com/JMalvin06/spotify-screensaver/main/preview/demo.gif)
 
-**This screensaver is currently only compatible with MacOS devices, but a Windows version is currently WIP.**
+**This screensaver is currently only compatible with MacOS devices, but a Windows version is currently a WIP.**
 
 ## Installation
 This is built to run on your own Spotify application since there is not a very safe way to get it to run on 
