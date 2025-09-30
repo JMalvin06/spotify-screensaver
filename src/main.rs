@@ -210,7 +210,8 @@ impl LoginMenu {
                     self.client.set_username();
                     self.content = Status::UserSelect;
                 } else {
-                    self.sign_in_message = String::from("Invalid ID or secret, please try again");
+                    let error = if self.id_input.is_empty() || self.secret_input.is_empty() {"empty client or secret"} else {"timed out"};
+                    self.sign_in_message = String::from(format!("{}, please try again", error));
                 }
             }
             Message::CloseWindow => {

@@ -12,7 +12,7 @@ use std::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 
-const URI: &str = "http://localhost:8888/callback";
+const URI: &str = "http://127.0.0.1:8000/callback";
 
 // TODO: Handle all errors without panic
 
@@ -151,7 +151,7 @@ impl SpotifyUser {
         ]);
 
         // Open listener at URI address
-        let listener =  tokio::net::TcpListener::bind("127.0.0.1:8888").await.expect("Could not bind");
+        let listener =  tokio::net::TcpListener::bind("127.0.0.1:8000").await.expect("Could not bind");
 
         let url_out = format!(
             "https://accounts.spotify.com/authorize?{}",
@@ -188,8 +188,8 @@ impl SpotifyUser {
 
                     }
                 },
-                _ = sleep(Duration::from_secs(2)) => {
-                    println!("timed out, invalid client");
+                _ = sleep(Duration::from_secs(5)) => {
+                    println!("timed out");
                     return String::from("400");
                 }
             }
