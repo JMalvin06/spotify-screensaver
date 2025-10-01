@@ -19,38 +19,85 @@ class SpotifyScreensaverView: ScreenSaverView {
     private var SECRET: String = ""
     private var REFRESH: String = ""
     
-    struct Player: Decodable{
-        let item: Track
+    struct Player: Codable {
+        let item: ObjectType
+    }
+
+    enum ObjectType: Codable {
+        case TrackObject(Track)
+        case EpisodeObject(Episode)
+        case None
+        
+        enum CodingKeys: String, CodingKey {
+            case type
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try keyed.decode(String.self, forKey: .type)
+            
+            switch type {
+            case "track":
+                let track = try container.decode(Track.self)
+                self = .TrackObject(track)
+            case "episode":
+                let episode = try container.decode(Episode.self)
+                self = .EpisodeObject(episode)
+            default:
+                self = .None
+            }
+        }
+        
+        func encode(to encoder: Encoder) throws {
+            switch self {
+            case .TrackObject(let track):
+                try track.encode(to: encoder)
+            case .EpisodeObject(let episode):
+                try episode.encode(to: encoder)
+            case .None:
+                var container = encoder.singleValueContainer()
+                try container.encodeNil()
+            }
+        }
+
     }
     
-    struct Track: Decodable {
+    struct Episode: Codable {
+        let show: Show
+    }
+    
+    struct Show: Codable {
+        let images: [Image]
+    }
+    
+    struct Track: Codable {
         let name: String
         let artists: [Artist]
         let album: Album
     }
     
-    struct Album: Decodable {
+    struct Album: Codable {
         let images: [Image]
         let name: String
     }
     
-    struct Artist: Decodable {
+    struct Artist: Codable {
         let name: String
     }
     
-    struct Image: Decodable {
+    struct Image: Codable {
         let url: String
     }
     
-    struct Access: Decodable {
+    struct Access: Codable {
         let access_token: String
     }
     
-    struct User: Decodable {
+    struct User: Codable {
         let name: String
         let refresh: String
     }
-    
     
     override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -165,7 +212,7 @@ class SpotifyScreensaverView: ScreenSaverView {
 
     
     func loadImage() async {
-        let url = URL(string: "https://api.spotify.com/v1/me/player")!
+        let url = URL(string: "https://api.spotify.com/v1/me/player?additional_types=episode")!
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -181,10 +228,19 @@ class SpotifyScreensaverView: ScreenSaverView {
                 return
             }
             
-            
             do {
                 let post = try JSONDecoder().decode(Player.self, from: data) // Since the JSON in the URL
-                guard let url = URL(string: post.item.album.images[0].url) else {return}
+                let item = post.item
+                let img_url = switch item {
+                case .TrackObject(let track):
+                    track.album.images[0].url
+                case .EpisodeObject(let episode):
+                    episode.show.images[0].url
+                case .None:
+                    ""
+                }
+                
+                guard let url = URL(string: img_url) else {return}
                 URLSession.shared.dataTask(with: url) { data, _, error in
                     if let data = data, let image = NSImage(data: data) {
                         Task {
@@ -192,15 +248,12 @@ class SpotifyScreensaverView: ScreenSaverView {
                         }
                     }
                 }.resume()
-            } catch let jsonError {
-                print("Failed to decode json", jsonError)
-            }
+            } catch {}
         }
         task.resume()
     }
     
     private func drawSquare() {
-        
         let squareDrawing = NSRect(x: squarePosition.x - squareSize.width / 2,
                                    y: squarePosition.y - squareSize.height / 2,
                                    width: squareSize.width,
