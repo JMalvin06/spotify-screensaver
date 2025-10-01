@@ -256,21 +256,6 @@ fn main() -> iced::Result {
     app.run_with(LoginMenu::new)
 }
 
-
-fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
-    fs::create_dir_all(&dst).expect("Cannot Create Directory");
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        } else {
-            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        }
-    }
-    Ok(())
-}
-
 fn containts_valid(path: &Path) -> bool {
     return path.exists() && path.join(Path::new("src")).exists()
 }
