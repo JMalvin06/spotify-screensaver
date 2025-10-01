@@ -245,7 +245,6 @@ impl SpotifyUser {
                     parsed.bytes().await.expect("could not convert")
                 },
                 Err(_) => {
-                    println!("Could not convert");
                     return bytes::Bytes::new()
                 },
             };

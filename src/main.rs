@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use std::{fs, path::{Path, PathBuf}, process::Command};
 
 use iced::{
@@ -242,7 +243,6 @@ impl LoginMenu {
         }
     }
 }
-
 
 fn main() -> iced::Result {
     let window_settings = window::Settings {

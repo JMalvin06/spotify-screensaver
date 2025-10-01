@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use std::sync::{mpsc, Arc};
 
 use bytes::Bytes;
@@ -17,6 +18,7 @@ const SPEED: f32 = 90.;
 async fn main() {
     nannou::app(model)
         .update(update)
+        .event(event)
         .run();
 }
 
@@ -32,14 +34,16 @@ struct Model {
     next_refresh: f32,
     window: WindowId,
     cached_bytes: Bytes,
-    client: Arc<Mutex<SpotifyUser>>
+    client: Arc<Mutex<SpotifyUser>>,
+    mouse_pos: Vec2,
+    first_frame: bool
 }
 
 fn model(app: &App) -> Model {
-    let window = app.new_window().fullscreen().view(view).build().unwrap();
+    let window = app.new_window().fullscreen().visible(false).view(view).build().unwrap();
     let (img_send, img_recieve) = mpsc::channel();
     let assets = app.assets_path().unwrap();
-    let img_path = assets.join("images").join("placeholder.jpg");
+    let img_path = assets.join("images").join("placeholder.png");
     let texture = wgpu::Texture::from_path(app, img_path).expect("Failed to load");
     let client = SpotifyUser::new();
     
@@ -55,7 +59,29 @@ fn model(app: &App) -> Model {
         next_refresh: 0.,
         window,
         client: Arc::new(Mutex::new(client)),
-        cached_bytes: Bytes::default()
+        cached_bytes: Bytes::default(),
+        mouse_pos: app.mouse.position(),
+        first_frame: true
+    }
+}
+
+fn event(app: &App, model: &mut Model, event: Event) {
+    match event {
+        Event::WindowEvent {id: _, simple: event } => {
+            if event.is_some() {
+                match event.unwrap() {
+                    MouseMoved(pos) => {
+                        if model.mouse_pos == Vec2::new(0.0, 0.0) {
+                            model.mouse_pos = app.mouse.position();
+                        } else if pos != model.mouse_pos {
+                            std::process::exit(0);
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        },
+        _ => {}
     }
 }
 
@@ -98,7 +124,6 @@ fn update_client(app: &App, model: &mut Model) {
     if app.time > model.next_refresh {
         let client = Arc::clone(&client_arc);
         let image_sender = model.img_send.clone();
-        //tokio::spawn(client.lock().await.refresh_track());
         tokio::spawn(async move {
             let mut client = client.lock().await;
             if !client.get_token().is_empty() && client.clone().can_recieve() {
@@ -117,14 +142,20 @@ fn update_client(app: &App, model: &mut Model) {
             model.texture = wgpu::Texture::from_image(app, &album_art);
         }
     }
+    if model.first_frame {
+        let window = app.window(model.window).unwrap();
+        window.set_visible(true);
+        model.first_frame = false;
+    }
 }
 
 fn view(app: &App, model: &Model, frame: Frame){  
     app.window(model.window).unwrap().set_cursor_visible(false);
     let draw = app.draw();
-    frame.clear(BLACK);
+    //frame.clear(BLACK);
+    draw.background().color(BLACK);
     draw.texture(&model.texture)
     .x_y(model.x, model.y)
     .w_h(SIZE,SIZE);
-    draw.to_frame(app, &frame).unwrap()
+    draw.to_frame(app, &frame).unwrap();
 }

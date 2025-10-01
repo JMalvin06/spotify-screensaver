@@ -3,6 +3,9 @@ name = "spotify_user"
 version = "0.1.0"
 edition = "2021"
 
+[package.metadata.winres]
+windows_subsystem = "windows"
+
 [dependencies]
 futures = "0.3.31"
 reqwest = {version="0.12.8", features = ["json"]}
