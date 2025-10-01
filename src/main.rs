@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use std::{fs, path::{Path, PathBuf}, process::Command};
 
 use iced::{
@@ -243,7 +244,6 @@ impl LoginMenu {
     }
 }
 
-
 fn main() -> iced::Result {
     let window_settings = window::Settings {
         size: iced::Size { width: 450.0, height: 200.0},
@@ -254,21 +254,6 @@ fn main() -> iced::Result {
         ::application(LoginMenu::title, LoginMenu::update, LoginMenu::view)
         .window(window_settings);
     app.run_with(LoginMenu::new)
-}
-
-
-fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
-    fs::create_dir_all(&dst).expect("Cannot Create Directory");
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        } else {
-            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
-        }
-    }
-    Ok(())
 }
 
 fn containts_valid(path: &Path) -> bool {
