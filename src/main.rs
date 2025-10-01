@@ -59,7 +59,7 @@ impl Default for LoginMenu {
                                           .unwrap()
                                           .parent()
                                           .expect("Cannot find parent")
-                                          .join(Path::new("SpotifyScreensaver"));
+                                          .join(Path::new("spotify_screensaver"));
                 if containts_valid(&parent_dir) {
                     parent_dir
                 } else {
@@ -176,19 +176,19 @@ impl LoginMenu {
                     let user_file = "user.json";
                     let constants_file = "constants.json";
                     let mut user_path = self.build_dir.clone();
-                    user_path.push("SpotifyScreensaver/user.json");
+                    user_path.push("src/user.json");
                     let mut constants_path = self.build_dir.clone();
-                    constants_path.push("SpotifyScreensaver/constants.json");
+                    constants_path.push("src/constants.json");
                     fs::copy(user_file,user_path).expect("Unable to copy file to resources");
                     fs::copy(constants_file,constants_path).expect("Unable to copy file to resources");
 
-                    Command::new("xcodebuild").current_dir(&self.build_dir).arg("build").output().expect("Could not build");
+                    Command::new("cargo").current_dir(&self.build_dir).arg("build").arg("--release").output().expect("Could not build");
                     
-                    let saver_path = self.build_dir.clone().join(Path::new("build/Release/SpotifyScreensaver.saver"));
-                    let  output_path: PathBuf = self.output_dir.clone().join(Path::new("SpotifyScreensaver.saver"));
+                    let saver_path = self.build_dir.clone().join(Path::new("target/release/spotify_screensaver").with_extension("exe"));
+                    let  output_path: PathBuf = self.output_dir.clone().join(Path::new("spotify_screensaver").with_extension("scr"));
 
-                    if saver_path.exists() {
-                        copy_dir(saver_path, output_path).expect("Could not copy saver to output directory");
+                    if saver_path.exists() && saver_path.is_file(){
+                        fs::copy(saver_path, output_path).expect("Could not copy saver to output directory");
                     } else {
                         panic!("Could not find file");
                     }
@@ -272,5 +272,5 @@ fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()>
 }
 
 fn containts_valid(path: &Path) -> bool {
-    return path.exists() && path.join(Path::new("SpotifyScreensaver.xcodeproj")).exists()
+    return path.exists() && path.join(Path::new("src")).exists()
 }
