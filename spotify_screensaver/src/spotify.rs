@@ -23,7 +23,28 @@ struct Access {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Player {
-    item: Track,
+    item: ObjectType,
+    context: Context
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum ObjectType {
+    #[serde(skip_serializing)]
+    Track(Track),
+    #[serde(skip_serializing)]
+    Episode(Episode),
+    None
+}
+impl Default for ObjectType {
+    fn default() -> Self {
+        ObjectType::None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Context {
+    r#type: String,
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -33,6 +54,17 @@ pub(crate) struct Track {
     pub album: Album,
 }
 
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Episode {
+    name: String,
+    show: Show
+}
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Show {
+    name: String,
+    images: Vec<Image>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct Album {
@@ -84,16 +116,6 @@ pub struct Constants {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Playlist {
-    context: Context,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Context {
-    external_urls: URL,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 struct URL {
     spotify: String,
 }
@@ -104,7 +126,7 @@ pub struct SpotifyUser {
     id: String,
     secret: String,
     can_recieve: bool,
-    current_track: Track,
+    currently_playing: ObjectType,
 }
 
 impl SpotifyUser {
@@ -118,12 +140,19 @@ impl SpotifyUser {
         }
     }
 
-    pub fn get_image(self) -> Image {
-        self.get_track().album.images[0].clone()
-    }
-
-    pub fn get_track(self) -> Track {
-        self.current_track
+    pub fn get_image(&self) -> Image {
+        return match &self.currently_playing {
+            ObjectType::Track(track) => 
+            {
+                track.album.images[0].clone()
+            },
+            ObjectType::Episode(episode) => {
+                episode.show.images[0].clone()
+            },
+            ObjectType::None => {
+                Image::default()
+            },
+        }
     }
 
     pub fn can_recieve(self) -> bool {
@@ -180,7 +209,7 @@ impl SpotifyUser {
 
     pub(crate) async fn refresh_track(&mut self) {
         self.can_recieve = false;
-        let url = format!("https://api.spotify.com/v1/me/player");
+        let url = format!("https://api.spotify.com/v1/me/player?additional_types=episode");
 
         let client = reqwest::Client::new(); // Client to handle API request
         let response = client
@@ -196,31 +225,10 @@ impl SpotifyUser {
                 let res = response.text().await.unwrap();
                 match serde_json::from_str::<Player>(&res.clone()) {
                     Ok(parsed) => {
-                        self.current_track = parsed.item; // Return Track struct
+                        self.currently_playing = parsed.item
                     }
                     Err(e) => {
-                        match serde_json::from_str::<Playlist>(&res.clone()) {
-                            Ok(parsed) => {
-                                if parsed.context.external_urls.spotify.contains("37i9dQZF1EYkqdzj48dyYq")
-                                {
-                                    self.current_track =  Track {
-                                        name: String::from("Up next"),
-                                        artists: vec![Artist { name: String::from("DJ X") }],
-                                        album: Album {
-                                            images: vec![Image {
-                                                url: String::from(
-                                                    "https://lexicon-assets.spotifycdn.com/DJ-Beta-CoverArt-640.jpg"
-                                                ),
-                                            }],
-                                            name: String::default(),
-                                        },
-                                    };
-                                } else {
-                                    panic!("Response did not match the structure: {:?}", e)
-                                }
-                            }
-                            Err(e) => panic!("Response did not match the structure: {:?}", e),
-                        }
+                        println!("Did not match the structure!: {:?}", e);
                     }
                 }
             }
@@ -231,7 +239,6 @@ impl SpotifyUser {
                 return;
             }
             reqwest::StatusCode::NO_CONTENT => {
-                self.current_track = Track::default();
             }
             _other => ()
         }
@@ -239,16 +246,19 @@ impl SpotifyUser {
     }
 
     pub(crate) async fn get_image_data(&self) -> bytes::Bytes {
-        let img_bytes = match reqwest
-            ::get(self.clone().get_image().url).await {
-                Ok(parsed) => {
-                    parsed.bytes().await.expect("could not convert")
-                },
-                Err(_) => {
-                    return bytes::Bytes::new()
-                },
-            };
-            
-        return img_bytes;
+        let url = self.get_image().url;
+        if !url.is_empty() {
+            return match reqwest
+                ::get(&url).await {
+                    Ok(parsed) => {
+                        parsed.bytes().await.expect("could not convert")
+                    },
+                    Err(_) => {
+                        bytes::Bytes::new()
+                    },
+                };
+        } else {
+            return bytes::Bytes::new();
+        }
     }
 }
