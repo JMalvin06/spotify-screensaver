@@ -3,14 +3,13 @@ This is a simple little screensaver that displays a user's currently playing Spo
 
 ![demo](https://raw.githubusercontent.com/JMalvin06/spotify-screensaver/main/preview/demo.gif)
 
+## Prerequisites
+- Windows version requires Rust - [Install Rust](https://rust-lang.org/tools/install/)
+- MacOS version requires the xcode command line tools - They can be installed by running `xcode-select --install`
 
 ## Installation
 This is built to run on your own Spotify application since there is not a very safe way to get it to run on 
 a single central app. Luckily, Spotify makes it quite easy to create your own application from their website.
-
-### Prerequisites
-- Windows version requires Rust - [Install Rust](https://rust-lang.org/tools/install/)
-- MacOS version requires the xcode command line tools - They can be installed by running `xcode-select --install`
 
 ### Application setup
 1. Go to the [Spotify for Developers](https://developer.spotify.com/) page
