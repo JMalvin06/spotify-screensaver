@@ -5,7 +5,7 @@ This is a simple little screensaver that displays a user's currently playing Spo
 
 ## Prerequisites
 - Windows version requires Rust - [Install Rust](https://rust-lang.org/tools/install/)
-- MacOS version requires the xcode command line tools - They can be installed by running `xcode-select --install`
+- MacOS version requires the xcode command line tools - `xcode-select --install`
 
 ## Installation
 This is built to run on your own Spotify application since there is not a very safe way to get it to run on 
