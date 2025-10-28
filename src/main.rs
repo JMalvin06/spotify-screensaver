@@ -103,7 +103,7 @@ impl LoginMenu {
                 let build_red = if self.build_status.1 {Color::from_rgb(255.0, 255.0,255.0)} else {Color::from_rgb(100.0, 0.0, 0.0)};
                 container(
                     column![
-                        text(format!("Successfully found account: {}", self.client.username)).size(15),
+                        text(format!("Successfully found account: {}", self.client.get_username())).size(15),
 
                         row![
                             text("Build folder: ").size(15),
@@ -240,7 +240,7 @@ impl LoginMenu {
             Message::ToSelection => {
                         self.client.set_id(&self.id_input);
                         self.client.set_secret(&self.secret_input);
-                        if !(self.id_input.is_empty() || self.secret_input.is_empty()) && self.client.generate_user(){
+                        if !(self.id_input.is_empty() || self.secret_input.is_empty()) && self.client.generate_refresh(){
                             self.client.generate_token();
                             self.client.set_username();
                             self.content = Status::UserSelect;
