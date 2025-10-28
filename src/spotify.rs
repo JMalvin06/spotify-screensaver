@@ -173,11 +173,12 @@ impl SpotifyUser {
                                 let status_line = "HTTP/1.1 200 OK";
                                 let contents = include_str!("response.html");
                                 let length = contents.len();
-                                let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+                                let response = format!("{status_line}\r\nContent-Type: text/html\r\nContent-Length: {length}\r\n\r\n{contents}");
 
                                 // Write and push html response
                                 stream.write_all(response.as_bytes()).await.expect("Unable to write");
                                 stream.flush().await.expect("Unable to send request");
+                                std::thread::sleep(std::time::Duration::from_millis(1000));
                                 return code;
                             }
                             panic!("unexpected error");

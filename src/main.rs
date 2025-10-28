@@ -229,15 +229,6 @@ impl LoginMenu {
                                 *progress_copy = DEP_COUNT;
                             });
                     
-
-                            let saver_path = self.build_dir.clone().join(Path::new("target/release/spotify_screensaver").with_extension("exe"));
-                            let  output_path: PathBuf = self.output_dir.clone().join(Path::new("spotify_screensaver").with_extension("scr"));
-
-                            if saver_path.exists() && saver_path.is_file(){
-                                fs::copy(saver_path, output_path).expect("Could not copy saver to output directory");
-                            } else {
-                                println!("Could not find file");
-                            }
                             self.content = Status::Loading;
                         }
                     }
@@ -291,6 +282,14 @@ impl LoginMenu {
                         self.progress_int = *progress_count;
 
                         if self.progress_int >= DEP_COUNT {
+                            let saver_path = self.build_dir.clone().join(Path::new("target/release/spotify_screensaver").with_extension("exe"));
+                            let  output_path: PathBuf = self.output_dir.clone().join(Path::new("spotify_screensaver").with_extension("scr"));
+
+                            if saver_path.exists() && saver_path.is_file(){
+                                fs::copy(saver_path, output_path).expect("Could not copy saver to output directory");
+                            } else {
+                                panic!("Could not find file");
+                            }
                             self.content = Status::SuccessPage;
                         }
                     }
