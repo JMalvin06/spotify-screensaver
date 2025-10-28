@@ -221,12 +221,11 @@ impl LoginMenu {
                                 for _line in reader.lines() {
                                     let mut progress_copy = progress_copy.lock().expect("Could not unwrap progress");
                                     *progress_copy += 1;
-                                    // println!("line: {:?}", line);
                                     std::thread::sleep(Duration::from_millis(1));
                                 }
 
                                 let mut progress_copy = progress_copy.lock().expect("Could not unwrap progress");
-                                *progress_copy = DEP_COUNT;
+                                *progress_copy = -1;
                             });
                     
                             self.content = Status::Loading;
@@ -280,7 +279,7 @@ impl LoginMenu {
                 match self.content {
                     Status::Loading => {
                         self.progress_int = *progress_count;
-                        if self.progress_int >= DEP_COUNT {
+                        if self.progress_int == -1 {
                             let saver_path = self.build_dir.clone().join(Path::new("target/release/spotify_screensaver").with_extension("exe"));
                             let  output_path: PathBuf = self.output_dir.clone().join(Path::new("spotify_screensaver").with_extension("scr"));
 

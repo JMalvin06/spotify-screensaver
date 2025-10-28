@@ -4,6 +4,7 @@ use std::sync::{mpsc, Arc};
 use bytes::Bytes;
 use nannou::prelude::*;
 use tokio::sync::Mutex;
+use rand::Rng;
 
 use crate::spotify::SpotifyUser;
 mod spotify;
@@ -46,13 +47,17 @@ fn model(app: &App) -> Model {
     let img_path = assets.join("images").join("placeholder.png");
     let texture = wgpu::Texture::from_path(app, img_path).expect("Failed to load");
     let client = SpotifyUser::new();
+    let rand_x = rand::thread_rng().gen_bool(0.5);
+    let rand_y = rand::thread_rng().gen_bool(0.5);
+
+    
     
     Model {
         x: 0.0,
         y: 0.0,
         last_time: 0.0,
-        x_sign: 1.0,
-        y_sign: 1.0,
+        x_sign: if rand_x {1.0} else {-1.0},
+        y_sign: if rand_y {1.0} else {-1.0},
         texture: texture,
         img_recieve,
         img_send,
