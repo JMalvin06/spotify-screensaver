@@ -83,7 +83,7 @@ impl Default for LoginMenu {
     }
 }
 
-const DEP_COUNT: i32 = 239;
+const DEP_COUNT: i32 = 234;
 
 impl LoginMenu {
     fn title(&self) -> String {
@@ -280,7 +280,6 @@ impl LoginMenu {
                 match self.content {
                     Status::Loading => {
                         self.progress_int = *progress_count;
-
                         if self.progress_int >= DEP_COUNT {
                             let saver_path = self.build_dir.clone().join(Path::new("target/release/spotify_screensaver").with_extension("exe"));
                             let  output_path: PathBuf = self.output_dir.clone().join(Path::new("spotify_screensaver").with_extension("scr"));
